@@ -71,9 +71,23 @@ class HTTPClient(object):
         return buffer.decode('utf-8')
 
     def GET(self, url, args=None):
-        code = 500
-        body = ""
-        return HTTPResponse(code, body)
+
+        hostname, path, port = self._parsed_url(url, args)
+        self.connect(hostname, port)
+
+        request = f"GET {path} HTTP/1.1\r\n" \
+            f"Host: {hostname}\r\n" \
+            "Connection: close\r\n" \
+            "Accept: */*\r\n\r\n"
+        self.sendall(request)
+
+        response = self.recvall(self.socket)
+
+        body = self.get_body(response)
+        print(body)
+        self.close()
+
+        return HTTPResponse(self.get_code(response), body)
 
     def POST(self, url, args=None):
         code = 500
@@ -86,12 +100,16 @@ class HTTPClient(object):
         else:
             return self.GET(url, args)
 
-    def _parsed_url(self, url):
+    def _parsed_url(self, url, args=None):
         parsedUrl = urllib.parse.urlparse(url)
+
+        hostname = parsedUrl.hostname
         path = parsedUrl.path if not parsedUrl.path else '/'
         port = parsedUrl.port if not parsedUrl.path else 80
+        formArgs = urllib.parse.urlencode(args) if not args else None
 
-        return path, port
+        return hostname, path, port, formArgs
+
 
 if __name__ == "__main__":
     client = HTTPClient()
