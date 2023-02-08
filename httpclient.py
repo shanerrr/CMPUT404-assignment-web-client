@@ -44,10 +44,10 @@ class HTTPClient(object):
         return None
 
     def get_code(self, data):
-        return int(data.split()[1])
+        return int(data.split("\n")[0].split()[1])
 
     def get_headers(self, data):
-        return None
+        return data.split("\r\n\r\n")[0]
 
     def get_body(self, data):
         return data.split("\r\n\r\n")[1]
@@ -72,26 +72,48 @@ class HTTPClient(object):
 
     def GET(self, url, args=None):
 
-        hostname, path, port = self._parsed_url(url, args)
+        parsedUrl, hostname, path, port = self._parse_url(url)
         self.connect(hostname, port)
 
         request = f"GET {path} HTTP/1.1\r\n" \
-            f"Host: {hostname}\r\n" \
-            "Connection: close\r\n" \
-            "Accept: */*\r\n\r\n"
+            f"Host: {parsedUrl.netloc}\r\n" \
+            "User-Agent: Mozilla/5.0\r\n" \
+            "Accept-Charset: UTF-8\r\n" \
+            "Accept: */*\r\n\r\n" \
+            "Connection: close\r\n"
         self.sendall(request)
-
         response = self.recvall(self.socket)
 
+        code = self.get_code(response)
         body = self.get_body(response)
         print(body)
         self.close()
 
-        return HTTPResponse(self.get_code(response), body)
+        return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
-        code = 500
-        body = ""
+
+        parsedUrl, hostname, path, port = self._parse_url(url)
+        formData = self._parse_args(args) if args is not None else ""
+        self.connect(hostname, port)
+
+        request = f"POST {path} HTTP/1.1\r\n" \
+            f"Host: {parsedUrl.netloc}\r\n" \
+            "User-Agent: Mozilla/5.0\r\n" \
+            "Content-Type: application/x-www-form-urlencoded\r\n" \
+            f"Content-Length: {str(0) if args is None else str(len(formData))}\r\n" \
+            "Accept-Charset: UTF-8\r\n" \
+            "Accept: */*\r\n" \
+            "Connection: close\r\n" \
+            "\r\n" + formData+"\r\n\r\n"
+        self.sendall(request)
+        response = self.recvall(self.socket)
+
+        code = self.get_code(response)
+        body = self.get_body(response)
+        print(body)
+        self.close()
+
         return HTTPResponse(code, body)
 
     def command(self, url, command="GET", args=None):
@@ -100,15 +122,21 @@ class HTTPClient(object):
         else:
             return self.GET(url, args)
 
-    def _parsed_url(self, url, args=None):
+    def _parse_url(self, url):
         parsedUrl = urllib.parse.urlparse(url)
 
         hostname = parsedUrl.hostname
-        path = parsedUrl.path if not parsedUrl.path else '/'
-        port = parsedUrl.port if not parsedUrl.path else 80
-        formArgs = urllib.parse.urlencode(args) if not args else None
+        path = parsedUrl.path
+        port = parsedUrl.port
+        if (not parsedUrl.path) or (len(parsedUrl.path) == 0):
+            path = "/"
+        if parsedUrl.port is None:
+            port = 80
 
-        return hostname, path, port, formArgs
+        return parsedUrl, hostname, path, port
+
+    def _parse_args(self, args):
+        return urllib.parse.urlencode(args, doseq=True)
 
 
 if __name__ == "__main__":
